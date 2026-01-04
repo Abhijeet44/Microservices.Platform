@@ -1,5 +1,4 @@
-﻿using Mando.Web.Utility;
-using static Mando.Web.Utility.SD;
+﻿using static Mango.Web.Utility.SD;
 
 namespace Mando.Web.Models
 {
