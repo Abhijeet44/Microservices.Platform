@@ -1,6 +1,6 @@
 ﻿using Mando.Web.Models;
 using Mando.Web.Services.IService;
-using Mando.Web.Utility;
+using Mango.Web.Utility;
 using Mango.Web.Model;
 
 namespace Mango.Web.Services
