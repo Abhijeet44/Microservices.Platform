@@ -5,7 +5,6 @@ using Mango.Services.CouponAPI.Model.Dto;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using System.Runtime.CompilerServices;
 
 namespace Mango.Services.CouponAPI.Controllers
 {
