@@ -32,6 +32,16 @@ namespace Mango.Web.Services
 			});
 		}
 
+		public async Task<ResponseDto> EmailCart(CartDto cartDto)
+		{
+			return await _baseService.SendAsync(new RequestDto()
+			{
+				APIType = SD.ApiType.POST,
+				Data = cartDto,
+				URL = SD.ShoppingCartAPIBase + "/api/cart/emailcartrequest"
+			});
+		}
+
 		public async Task<ResponseDto> GetCartByUserIdAsync(string userId)
 		{
 			return await _baseService.SendAsync(new RequestDto()
