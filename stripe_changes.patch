@@ -1,0 +1,322 @@
+diff --git a/Mando.Web/Controllers/CartController.cs b/Mando.Web/Controllers/CartController.cs
+index 8b3064c..fc6312f 100644
+--- a/Mando.Web/Controllers/CartController.cs
++++ b/Mando.Web/Controllers/CartController.cs
+@@ -47,11 +47,30 @@ namespace Mango.Web.Controllers
+ 			
+ 			if(response != null && response.isSuccess)
+ 			{
+-
++				// Get a stripe session and redirect to stripe payment page
++				var domain = Request.Scheme + "://" + Request.Host.Value + "/";
++
++				StripeRequestDto stripeRequestDto = new ()
++				{
++					ApprovedUrl = domain + "Cart/Confirmation?orderId=" + orderHeaderDto?.OrderHeaderId,
++					CancelUrl = domain + "cart/checkout",
++					OrderHeader = orderHeaderDto
++				};
++
++				var stripeResponse = await _orderService.CreateStripeSession(stripeRequestDto);
++				StripeRequestDto stripeRequest = JsonConvert.DeserializeObject<StripeRequestDto>(Convert.ToString(stripeResponse.Result));
++				Response.Headers.Add("Location", stripeRequest.StripeSessionUrl);
++				return new StatusCodeResult(303);
+ 			}
+ 			return View();
+ 		}
+ 
++		[Authorize]
++		public async Task<IActionResult> Confirmation(int orderId)
++		{
++			return View(orderId);
++		}
++
+ 		public async Task<IActionResult> Remove(int cartDetailsId)
+ 		{
+ 			var userId = User.Claims.Where(u => u.Type == JwtRegisteredClaimNames.Sub)?.FirstOrDefault()?.Value;
+diff --git a/Mando.Web/Mango.Web.csproj b/Mando.Web/Mango.Web.csproj
+index 0776d2d..5e607cc 100644
+--- a/Mando.Web/Mango.Web.csproj
++++ b/Mando.Web/Mango.Web.csproj
+@@ -12,4 +12,8 @@
+     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
+   </ItemGroup>
+ 
++  <ItemGroup>
++    <Folder Include="wwwroot\Images\" />
++  </ItemGroup>
++
+ </Project>
+diff --git a/Mando.Web/Models/StripeRequestDto.cs b/Mando.Web/Models/StripeRequestDto.cs
+new file mode 100644
+index 0000000..01b4ad2
+--- /dev/null
++++ b/Mando.Web/Models/StripeRequestDto.cs
+@@ -0,0 +1,11 @@
++﻿namespace Mango.Web.Models
++{
++	public class StripeRequestDto
++	{
++		public string? StripeSessionUrl { get; set; }
++		public string? StripeSessionId { get;set; }		
++		public string ApprovedUrl { get; set; }
++		public string CancelUrl { get; set; }
++		public OrderHeaderDto OrderHeader { get; set; }
++	}
++}
+diff --git a/Mando.Web/Services/IService/IOrderService.cs b/Mando.Web/Services/IService/IOrderService.cs
+index 3b282ef..96a9723 100644
+--- a/Mando.Web/Services/IService/IOrderService.cs
++++ b/Mando.Web/Services/IService/IOrderService.cs
+@@ -6,5 +6,6 @@ namespace Mango.Web.Services.IService
+ 	public interface IOrderService
+ 	{
+ 		Task<ResponseDto> CreateOrder(CartDto cartDto);
++		Task<ResponseDto> CreateStripeSession(StripeRequestDto stripeRequestDto);
+ 	}
+ }
+diff --git a/Mando.Web/Services/OrderService.cs b/Mando.Web/Services/OrderService.cs
+index 063aaf4..a07c10e 100644
+--- a/Mando.Web/Services/OrderService.cs
++++ b/Mando.Web/Services/OrderService.cs
+@@ -23,5 +23,17 @@ namespace Mango.Web.Services
+ 				Data = cartDto
+ 			});
+ 		}
++
++		public async Task<ResponseDto> CreateStripeSession(StripeRequestDto stripeRequestDto)
++		{
++			return await _baseService.SendAsync(new RequestDto
++			{
++				APIType = SD.ApiType.POST,
++				URL = SD.OrderAPIBase + "/api/order/CreateStripeSession",
++				Data = stripeRequestDto
++			});
++		}
++
++
+ 	}
+ }
+diff --git a/Mando.Web/Views/Cart/Confirmation.cshtml b/Mando.Web/Views/Cart/Confirmation.cshtml
+new file mode 100644
+index 0000000..ab709f5
+--- /dev/null
++++ b/Mando.Web/Views/Cart/Confirmation.cshtml
+@@ -0,0 +1,7 @@
++﻿@model int
++
++<div class="text-center">
++    <h1 class="text-info pt-4">Congratulations! You are one step closer to amazing food.</h1>
++    <p class="pb-3">We have received your order and your payment will be processed soon!</p>
++    <img src="/images/order.PNG" width="80%" />
++</div>
+\ No newline at end of file
+diff --git a/Mando.Web/wwwroot/Images/mango.png b/Mando.Web/wwwroot/Images/mango.png
+new file mode 100644
+index 0000000..443e990
+Binary files /dev/null and b/Mando.Web/wwwroot/Images/mango.png differ
+diff --git a/Mando.Web/wwwroot/Images/order.PNG b/Mando.Web/wwwroot/Images/order.PNG
+new file mode 100644
+index 0000000..38d5637
+Binary files /dev/null and b/Mando.Web/wwwroot/Images/order.PNG differ
+diff --git a/Mango.Services.CouponAPI/Controllers/CouponAPIController.cs b/Mango.Services.CouponAPI/Controllers/CouponAPIController.cs
+index 27d3308..ddfc8f4 100644
+--- a/Mango.Services.CouponAPI/Controllers/CouponAPIController.cs
++++ b/Mango.Services.CouponAPI/Controllers/CouponAPIController.cs
+@@ -83,6 +83,18 @@ namespace Mango.Services.CouponAPI.Controllers
+ 				Coupon obj = _mapper.Map<Coupon>(couponDto);
+ 				_db.Coupons.Add(obj);
+ 				_db.SaveChanges();
++
++				var options = new Stripe.CouponCreateOptions
++				{ 
++					AmountOff = (long)(couponDto.DiscountAmount*100),
++					Name = couponDto.CouponCode,
++					Currency = "usd",
++					Id = couponDto.CouponCode
++
++				};
++				var service = new Stripe.CouponService();
++				service.Create(options);
++
+ 				_response.Result = _mapper.Map<CouponDto>(obj);
+ 			}
+ 			catch (Exception ex)
+@@ -122,6 +134,9 @@ namespace Mango.Services.CouponAPI.Controllers
+ 				Coupon obj = _db.Coupons.First(u => u.CouponId == id);
+ 				_db.Coupons.Remove(obj);
+ 				_db.SaveChanges();
++
++				var service = new Stripe.CouponService();
++				service.Delete(obj.CouponCode);
+ 			}
+ 			catch (Exception ex)
+ 			{
+diff --git a/Mango.Services.CouponAPI/Mango.Services.CouponAPI.csproj b/Mango.Services.CouponAPI/Mango.Services.CouponAPI.csproj
+index be78dcd..2d2e25b 100644
+--- a/Mango.Services.CouponAPI/Mango.Services.CouponAPI.csproj
++++ b/Mango.Services.CouponAPI/Mango.Services.CouponAPI.csproj
+@@ -17,6 +17,7 @@
+       <PrivateAssets>all</PrivateAssets>
+       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+     </PackageReference>
++    <PackageReference Include="Stripe.net" Version="50.4.0-beta.1" />
+     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+   </ItemGroup>
+ 
+diff --git a/Mango.Services.CouponAPI/Program.cs b/Mango.Services.CouponAPI/Program.cs
+index 09ea5ee..f7279bd 100644
+--- a/Mango.Services.CouponAPI/Program.cs
++++ b/Mango.Services.CouponAPI/Program.cs
+@@ -22,6 +22,9 @@ IMapper mapper = MappingConfig.RegisterMaps().CreateMapper();
+ builder.Services.AddSingleton(mapper);
+ builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+ 
++Stripe.StripeConfiguration.ApiKey = builder.Configuration.GetSection("Stripe:SecretKey").Get<string>();
++
++
+ builder.Services.AddControllers();
+ // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+ 
+diff --git a/Mango.Services.OrderAPI/Controllers/OrderAPIController.cs b/Mango.Services.OrderAPI/Controllers/OrderAPIController.cs
+index cade373..24cfbea 100644
+--- a/Mango.Services.OrderAPI/Controllers/OrderAPIController.cs
++++ b/Mango.Services.OrderAPI/Controllers/OrderAPIController.cs
+@@ -6,6 +6,8 @@ using Mango.Services.OrderAPI.Services.IServices;
+ using Mango.Services.OrderAPI.Utility;
+ using Microsoft.AspNetCore.Authorization;
+ using Microsoft.AspNetCore.Mvc;
++using Stripe;
++using Stripe.Checkout;
+ 
+ namespace Mango.Services.OrderAPI.Controllers
+ {
+@@ -38,6 +40,7 @@ namespace Mango.Services.OrderAPI.Controllers
+ 				orderHeaderDto.OrderDetails = _mapper.Map<IEnumerable<OrderDetailDto>>(cartDto.CartDetails);
+ 
+ 				OrderHeader orderCreated = _db.OrderHeaders.Add(_mapper.Map<OrderHeader>(orderHeaderDto)).Entity;
++
+ 				await _db.SaveChangesAsync();
+ 
+ 				orderHeaderDto.OrderHeaderId = orderCreated.OrderHeaderId;
+@@ -51,5 +54,65 @@ namespace Mango.Services.OrderAPI.Controllers
+ 			}
+ 			return _responseDto;
+ 		}
++
++		[Authorize]
++		[HttpPost("CreateStripeSession")]
++		public async Task<ResponseDto> CreateStripeSession([FromBody] StripeRequestDto stripeRequestDto)
++		{
++			try
++			{
++				var options = new SessionCreateOptions
++				{
++					SuccessUrl = stripeRequestDto.ApprovedUrl,
++					CancelUrl = stripeRequestDto.CancelUrl,
++					LineItems = new List<SessionLineItemOptions>(),
++					Mode = "payment",
++				};
++
++				var discountsObj = new List<SessionDiscountOptions>
++				{
++					new SessionDiscountOptions
++					{
++						Coupon = stripeRequestDto.OrderHeader.CouponCode
++					}
++				};
++
++				foreach (var item in stripeRequestDto.OrderHeader.OrderDetails)
++				{
++					var sessionLineItem = new SessionLineItemOptions
++					{
++						PriceData = new SessionLineItemPriceDataOptions
++						{
++							UnitAmount = (long)(item.Price * 100), // Stripe expects the amount in cents
++							Currency = "usd",
++							ProductData = new SessionLineItemPriceDataProductDataOptions
++							{
++								Name = item?.ProductName
++							},
++						},
++						Quantity = item.Count,
++					};
++					options.LineItems.Add(sessionLineItem);
++				}
++
++				if(stripeRequestDto.OrderHeader.Discount > 0)
++				{
++					options.Discounts = discountsObj;
++				}
++				var service = new SessionService();
++				Session session = service.Create(options);
++				stripeRequestDto.StripeSessionUrl = session.Url;
++				OrderHeader orderHeader = _db.OrderHeaders.First(u => u.OrderHeaderId == stripeRequestDto.OrderHeader.OrderHeaderId);
++				orderHeader.StripSessionId = session.Id;
++				_db.SaveChanges();
++				_responseDto.Result = stripeRequestDto;
++			}
++			catch (Exception ex)
++			{
++				_responseDto.isSuccess = false;
++				_responseDto.Message = ex.Message;
++			}
++			return _responseDto;
++		}
+ 	}
+ }
+diff --git a/Mango.Services.OrderAPI/Mango.Services.OrderAPI.csproj b/Mango.Services.OrderAPI/Mango.Services.OrderAPI.csproj
+index 3b899d6..745bbf1 100644
+--- a/Mango.Services.OrderAPI/Mango.Services.OrderAPI.csproj
++++ b/Mango.Services.OrderAPI/Mango.Services.OrderAPI.csproj
+@@ -22,6 +22,7 @@
+ 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+ 	  </PackageReference>
+ 	  <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
++	  <PackageReference Include="Stripe.net" Version="50.4.0-beta.1" />
+ 	  <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+   </ItemGroup>
+ 
+diff --git a/Mango.Services.OrderAPI/MappingConfig.cs b/Mango.Services.OrderAPI/MappingConfig.cs
+index d8ea9ec..a6f1153 100644
+--- a/Mango.Services.OrderAPI/MappingConfig.cs
++++ b/Mango.Services.OrderAPI/MappingConfig.cs
+@@ -17,7 +17,7 @@ namespace Mango.Services.OrderAPI
+ 				.ForMember(dest => dest.ProductName, u => u.MapFrom(src => src.Product.Name))
+ 				.ForMember(dest => dest.Price, u => u.MapFrom(src => src.Product.Price));
+ 
+-				config.CreateMap<OrderDetailDto, CartDetailsDto>().ReverseMap();
++				config.CreateMap<OrderDetailDto, CartDetailsDto>();
+ 
+ 				config.CreateMap<OrderHeader, OrderHeaderDto>().ReverseMap();
+ 				config.CreateMap<OrderDetailDto, Orderdetails>().ReverseMap();
+diff --git a/Mango.Services.OrderAPI/Models/Dto/StripeRequestDto.cs b/Mango.Services.OrderAPI/Models/Dto/StripeRequestDto.cs
+new file mode 100644
+index 0000000..d1423b8
+--- /dev/null
++++ b/Mango.Services.OrderAPI/Models/Dto/StripeRequestDto.cs
+@@ -0,0 +1,11 @@
++﻿namespace Mango.Services.OrderAPI.Models.Dto	
++{
++	public class StripeRequestDto
++	{
++		public string? StripeSessionUrl { get; set; }
++		public string? StripeSessionId { get;set; }		
++		public string ApprovedUrl { get; set; }
++		public string CancelUrl { get; set; }
++		public OrderHeaderDto OrderHeader { get; set; }
++	}
++}
+diff --git a/Mango.Services.OrderAPI/Program.cs b/Mango.Services.OrderAPI/Program.cs
+index 7816604..60d45aa 100644
+--- a/Mango.Services.OrderAPI/Program.cs
++++ b/Mango.Services.OrderAPI/Program.cs
+@@ -29,7 +29,7 @@ builder.Services.AddHttpContextAccessor();
+ builder.Services.AddHttpClient("Product", u => u.BaseAddress =
+ new Uri(builder.Configuration["ServiceUrls:ProductAPI"])).AddHttpMessageHandler<BackendApiAuthenticationHttpClientHandler>();
+ 
+-
++Stripe.StripeConfiguration.ApiKey = builder.Configuration.GetSection("Stripe:SecretKey").Get<string>();	
+ 
+ builder.Services.AddControllers();
+ // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
