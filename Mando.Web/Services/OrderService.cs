@@ -23,5 +23,17 @@ namespace Mango.Web.Services
 				Data = cartDto
 			});
 		}
+
+		public async Task<ResponseDto> CreateStripeSession(StripeRequestDto stripeRequestDto)
+		{
+			return await _baseService.SendAsync(new RequestDto
+			{
+				APIType = SD.ApiType.POST,
+				URL = SD.OrderAPIBase + "/api/order/CreateStripeSession",
+				Data = stripeRequestDto
+			});
+		}
+
+
 	}
 }
