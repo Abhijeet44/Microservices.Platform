@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using Mango.MessageBus;
 using Mango.Services.OrderAPI.Data;
 using Mango.Services.OrderAPI.Models;
 using Mango.Services.OrderAPI.Models.Dto;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Stripe;
 using Stripe.Checkout;
+using Stripe.Climate;
 
 namespace Mango.Services.OrderAPI.Controllers
 {
@@ -19,13 +21,17 @@ namespace Mango.Services.OrderAPI.Controllers
 		private IMapper _mapper;
 		private readonly AppDbContext _db;
 		private readonly IProductServices _productServices;
+		private readonly IConfiguration _configuration;
+		private readonly IMessageBus _messageBus;
 
-		public OrderAPIController(AppDbContext db, IMapper mapper, IProductServices productService)
+		public OrderAPIController(AppDbContext db, IMapper mapper, IProductServices productService, IConfiguration configuration, IMessageBus messageBus)
 		{
 			_db = db;
 			_mapper = mapper;
 			_productServices = productService;
 			this._responseDto = new ResponseDto();
+			_configuration = configuration;
+			_messageBus = messageBus;
 		}
 
 		[Authorize]
@@ -90,7 +96,7 @@ namespace Mango.Services.OrderAPI.Controllers
 								Name = item?.ProductName
 							},
 						},
-						Quantity = item.Count,
+						Quantity = item?.Count,
 					};
 					options.LineItems.Add(sessionLineItem);
 				}
@@ -106,6 +112,45 @@ namespace Mango.Services.OrderAPI.Controllers
 				orderHeader.StripSessionId = session.Id;
 				_db.SaveChanges();
 				_responseDto.Result = stripeRequestDto;
+			}
+			catch (Exception ex)
+			{
+				_responseDto.isSuccess = false;
+				_responseDto.Message = ex.Message;
+			}
+			return _responseDto;
+		}
+
+		[Authorize]
+		[HttpPost("ValidateStripeSession")]
+		public async Task<ResponseDto> ValidateStripeSession([FromBody] int orderHeaderId)
+		{
+			try
+			{
+				 OrderHeader orderHeader = _db.OrderHeaders.First(u => u.OrderHeaderId == orderHeaderId);
+
+				var service = new SessionService();
+				Session session = service.Get(orderHeader.StripSessionId);
+
+				var paymentIntentService = new PaymentIntentService();
+				PaymentIntent paymentIntent = paymentIntentService.Get(session.PaymentIntentId);
+
+				if (paymentIntent.Status == "succeeded")
+				{
+					// payment was successful, update the order status to approved
+					orderHeader.PaymentIntentId = paymentIntent.Id;
+					orderHeader.Status = SD.Status_Approved;
+					_db.SaveChanges();
+					RewardsDto rewardsDto = new RewardsDto
+					{
+						UserId = orderHeader.UserId,
+						RewardsActivity = Convert.ToInt32(orderHeader.OrderTotal),
+						OrderId = orderHeader.UserId
+					};
+					string topicName = _configuration.GetValue<string>("TopicAndQueueName:OrderCreatedTopic");
+					await _messageBus.PublishMessage(rewardsDto, topicName);
+					_responseDto.Result = _mapper.Map<OrderHeaderDto>(orderHeader);
+				};
 			}
 			catch (Exception ex)
 			{
