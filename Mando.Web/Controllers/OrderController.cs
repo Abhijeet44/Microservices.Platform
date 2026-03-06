@@ -56,13 +56,13 @@ namespace Mango.Web.Controllers
 				switch (status)
 				{
 					case "approved":
-						list = list.Where(u => u.Status == SD.Status_Pending);
+						list = list.Where(u => u.Status == SD.Status_Approved);
 						break;
 					case "readyforpickup":
-						list = list.Where(u => u.Status == SD.Status_Pending);
+						list = list.Where(u => u.Status == SD.Status_ReadyForPickup);
 						break;
 					case "cancelled":
-						list = list.Where(u => u.Status == SD.Status_Pending);
+						list = list.Where(u => u.Status == SD.Status_Cancelled);
 						break;
 					default:
 						break;
