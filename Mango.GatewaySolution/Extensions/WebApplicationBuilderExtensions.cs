@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
+using Microsoft.OpenApi;
 
-namespace Mango.Services.ShoppingCartAPI.Extensions
+namespace Mango.GatewaySolutions.Extensions
 {
 	public static class WebApplicationBuilderExtensions
 	{
